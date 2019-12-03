@@ -1,5 +1,5 @@
 var _ = require('underscore');
-var rpio = require('rpio');
+var TCA6416A = require('node-tca6416a');
 var Service, Characteristic, HomebridgeAPI;
 
 const STATE_DECREASING = 0;
@@ -16,6 +16,8 @@ module.exports = function(homebridge) {
 function BlindsAccessory(log, config) {
   _.defaults(config, {durationOffset: 0, activeLow: true, reedSwitchActiveLow: true});
 
+  this.tca = new TCA6416A({address: 0x20, device: 1, debug: false });
+
   this.log = log;
   this.name = config['name'];
   this.pinUp = config['pinUp'];
@@ -25,9 +27,9 @@ function BlindsAccessory(log, config) {
   this.durationOffset = config['durationOffset'];
   this.pinClosed = config['pinClosed'];
   this.pinOpen = config['pinOpen'];
-  this.initialState = config['activeLow'] ? rpio.HIGH : rpio.LOW;
-  this.activeState = config['activeLow'] ? rpio.LOW : rpio.HIGH;
-  this.reedSwitchActiveState = config['reedSwitchActiveLow'] ? rpio.LOW : rpio.HIGH;
+  this.initialState = config['activeLow'] ? this.tca.HIGH : this.tca.LOW;
+  this.activeState = config['activeLow'] ? this.tca.LOW : this.tca.HIGH;
+  this.reedSwitchActiveState = config['reedSwitchActiveLow'] ? this.tca.LOW : this.tca.HIGH;
 
   this.cacheDirectory = HomebridgeAPI.user.persistPath();
   this.storage = require('node-persist');
@@ -58,13 +60,11 @@ function BlindsAccessory(log, config) {
   this.currentPositionInterval;
 
   // use gpio pin numbering
-  rpio.init({
-    mapping: 'gpio'
-  });
-  rpio.open(this.pinUp, rpio.OUTPUT, this.initialState);
-  rpio.open(this.pinDown, rpio.OUTPUT, this.initialState);
-  if (this.pinClosed) rpio.open(this.pinClosed, rpio.INPUT, rpio.PULL_UP);
-  if (this.pinOpen) rpio.open(this.pinOpen, rpio.INPUT, rpio.PULL_UP);
+
+  this.tca.pinMode(this.pinUp, this.tca.OUTPUT);
+  this.tca.pinMode(this.pinDown, this.tca.OUTPUT);
+  if (this.pinClosed) this.tca.pinMode(this.pinClosed, this.tca.INPUT_PULLUP);
+  if (this.pinOpen) this.tca.pinMode(this.pinOpen, this.tca.INPUT_PULLUP);
 
   this.service
     .getCharacteristic(Characteristic.CurrentPosition)
@@ -124,7 +124,7 @@ BlindsAccessory.prototype.setTargetPosition = function(position, callback) {
     this.log("Blind is moving, current position %s", this.currentPosition);
     if (this.oppositeDirection(moveUp)) {
       this.log('Stopping the blind because of opposite direction');
-      rpio.write((moveUp ? this.pinDown : this.pinUp), this.initialState);
+      this.tca.digitalWrite((moveUp ? this.pinDown : this.pinUp), this.initialState);
     }
     clearInterval(this.currentPositionInterval);
     clearTimeout(this.finalBlindsStateTimeout);
@@ -158,10 +158,10 @@ BlindsAccessory.prototype.setTargetPosition = function(position, callback) {
 }
 
 BlindsAccessory.prototype.togglePin = function(pin, duration) {
-  if (rpio.read(pin) != this.activeState) rpio.write(pin, this.activeState);
+  if (this.tca.digitalReadSync(pin) != this.activeState) this.tca.digitalWrite(pin, this.activeState);
   if (this.durationOffset && (this.targetPosition == 0 || this.targetPosition == 100)) this.duration += this.durationOffset;
   this.togglePinTimeout = setTimeout(function() {
-    rpio.write(pin, this.initialState);
+    this.tca.digitalWrite(pin, this.initialState);
   }.bind(this), parseInt(duration));
 }
 
@@ -185,22 +185,22 @@ BlindsAccessory.prototype.setCurrentPosition = function(moveUp) {
 }
 
 BlindsAccessory.prototype.closedAndOutOfSync = function() {
-  return this.currentPosition != 0 && this.pinClosed && (rpio.read(this.pinClosed) == this.reedSwitchActiveState);
+  return this.currentPosition != 0 && this.pinClosed && (this.tca.digitalReadSync(this.pinClosed) == this.reedSwitchActiveState);
 }
 
 BlindsAccessory.prototype.openAndOutOfSync = function() {
-  return this.currentPosition != 100 && this.pinOpen && (rpio.read(this.pinOpen) == this.reedSwitchActiveState);
+  return this.currentPosition != 100 && this.pinOpen && (this.tca.digitalReadSync(this.pinOpen) == this.reedSwitchActiveState);
 }
 
 BlindsAccessory.prototype.partiallyOpenAndOutOfSync = function() {
-  return (this.currentPosition == 0 && this.pinClosed && (rpio.read(this.pinClosed) != this.reedSwitchActiveState)) ||
-         (this.currentPosition == 100 && this.pinOpen && (rpio.read(this.pinOpen) != this.reedSwitchActiveState));
+  return (this.currentPosition == 0 && this.pinClosed && (this.tca.digitalReadSync(this.pinClosed) != this.reedSwitchActiveState)) ||
+         (this.currentPosition == 100 && this.pinOpen && (this.tca.digitalReadSync(this.pinOpen) != this.reedSwitchActiveState));
 }
 
 BlindsAccessory.prototype.openCloseSensorMalfunction = function() {
   return (this.pinClosed && this.pinOpen &&
-         (rpio.read(this.pinClosed) == this.reedSwitchActiveState) &&
-         (rpio.read(this.pinOpen) == this.reedSwitchActiveState));
+         (this.tca.digitalReadSync(this.pinClosed) == this.reedSwitchActiveState) &&
+         (this.tca.digitalReadSync(this.pinOpen) == this.reedSwitchActiveState));
 }
 
 BlindsAccessory.prototype.oppositeDirection = function(moveUp) {
