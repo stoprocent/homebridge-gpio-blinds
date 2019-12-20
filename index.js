@@ -1,10 +1,12 @@
 var _ = require('underscore');
-var TCA6416A = require('node-tca6416a');
+var TCA6416A = require('../node-tca6416a');
 var Service, Characteristic, HomebridgeAPI;
 
 const STATE_DECREASING = 0;
 const STATE_INCREASING = 1;
 const STATE_STOPPED = 2;
+
+const TCA = new TCA6416A({address: 0x20, device: 1, debug: false });
 
 module.exports = function(homebridge) {
   Service = homebridge.hap.Service;
@@ -16,8 +18,6 @@ module.exports = function(homebridge) {
 function BlindsAccessory(log, config) {
   _.defaults(config, {durationOffset: 0, activeLow: true, reedSwitchActiveLow: true});
 
-  this.tca = new TCA6416A({address: 0x20, device: 1, debug: false });
-
   this.log = log;
   this.name = config['name'];
   this.pinUp = config['pinUp'];
@@ -27,9 +27,9 @@ function BlindsAccessory(log, config) {
   this.durationOffset = config['durationOffset'];
   this.pinClosed = config['pinClosed'];
   this.pinOpen = config['pinOpen'];
-  this.initialState = config['activeLow'] ? this.tca.HIGH : this.tca.LOW;
-  this.activeState = config['activeLow'] ? this.tca.LOW : this.tca.HIGH;
-  this.reedSwitchActiveState = config['reedSwitchActiveLow'] ? this.tca.LOW : this.tca.HIGH;
+  this.initialState = config['activeLow'] ? TCA.HIGH : TCA.LOW;
+  this.activeState = config['activeLow'] ? TCA.LOW : TCA.HIGH;
+  this.reedSwitchActiveState = config['reedSwitchActiveLow'] ? TCA.LOW : TCA.HIGH;
 
   this.cacheDirectory = HomebridgeAPI.user.persistPath();
   this.storage = require('node-persist');
@@ -61,10 +61,10 @@ function BlindsAccessory(log, config) {
 
   // use gpio pin numbering
 
-  this.tca.pinMode(this.pinUp, this.tca.OUTPUT);
-  this.tca.pinMode(this.pinDown, this.tca.OUTPUT);
-  if (this.pinClosed) this.tca.pinMode(this.pinClosed, this.tca.INPUT_PULLUP);
-  if (this.pinOpen) this.tca.pinMode(this.pinOpen, this.tca.INPUT_PULLUP);
+  TCA.pinMode(this.pinUp, TCA.OUTPUT);
+  TCA.pinMode(this.pinDown, TCA.OUTPUT);
+  if (this.pinClosed) TCA.pinMode(this.pinClosed, TCA.INPUT_PULLUP);
+  if (this.pinOpen) TCA.pinMode(this.pinOpen, TCA.INPUT_PULLUP);
 
   this.service
     .getCharacteristic(Characteristic.CurrentPosition)
@@ -124,7 +124,7 @@ BlindsAccessory.prototype.setTargetPosition = function(position, callback) {
     this.log("Blind is moving, current position %s", this.currentPosition);
     if (this.oppositeDirection(moveUp)) {
       this.log('Stopping the blind because of opposite direction');
-      this.tca.digitalWrite((moveUp ? this.pinDown : this.pinUp), this.initialState);
+      TCA.digitalWrite((moveUp ? this.pinDown : this.pinUp), this.initialState);
     }
     clearInterval(this.currentPositionInterval);
     clearTimeout(this.finalBlindsStateTimeout);
@@ -158,10 +158,11 @@ BlindsAccessory.prototype.setTargetPosition = function(position, callback) {
 }
 
 BlindsAccessory.prototype.togglePin = function(pin, duration) {
-  if (this.tca.digitalReadSync(pin) != this.activeState) this.tca.digitalWrite(pin, this.activeState);
+  this.log("TOGGLE %d %d %d", pin, duration, TCA.digitalReadSync(pin))
+  if (TCA.digitalReadSync(pin) != this.activeState) TCA.digitalWrite(pin, this.activeState);
   if (this.durationOffset && (this.targetPosition == 0 || this.targetPosition == 100)) this.duration += this.durationOffset;
   this.togglePinTimeout = setTimeout(function() {
-    this.tca.digitalWrite(pin, this.initialState);
+    TCA.digitalWrite(pin, this.initialState);
   }.bind(this), parseInt(duration));
 }
 
@@ -185,22 +186,22 @@ BlindsAccessory.prototype.setCurrentPosition = function(moveUp) {
 }
 
 BlindsAccessory.prototype.closedAndOutOfSync = function() {
-  return this.currentPosition != 0 && this.pinClosed && (this.tca.digitalReadSync(this.pinClosed) == this.reedSwitchActiveState);
+  return this.currentPosition != 0 && this.pinClosed && (TCA.digitalReadSync(this.pinClosed) == this.reedSwitchActiveState);
 }
 
 BlindsAccessory.prototype.openAndOutOfSync = function() {
-  return this.currentPosition != 100 && this.pinOpen && (this.tca.digitalReadSync(this.pinOpen) == this.reedSwitchActiveState);
+  return this.currentPosition != 100 && this.pinOpen && (TCA.digitalReadSync(this.pinOpen) == this.reedSwitchActiveState);
 }
 
 BlindsAccessory.prototype.partiallyOpenAndOutOfSync = function() {
-  return (this.currentPosition == 0 && this.pinClosed && (this.tca.digitalReadSync(this.pinClosed) != this.reedSwitchActiveState)) ||
-         (this.currentPosition == 100 && this.pinOpen && (this.tca.digitalReadSync(this.pinOpen) != this.reedSwitchActiveState));
+  return (this.currentPosition == 0 && this.pinClosed && (TCA.digitalReadSync(this.pinClosed) != this.reedSwitchActiveState)) ||
+         (this.currentPosition == 100 && this.pinOpen && (TCA.digitalReadSync(this.pinOpen) != this.reedSwitchActiveState));
 }
 
 BlindsAccessory.prototype.openCloseSensorMalfunction = function() {
   return (this.pinClosed && this.pinOpen &&
-         (this.tca.digitalReadSync(this.pinClosed) == this.reedSwitchActiveState) &&
-         (this.tca.digitalReadSync(this.pinOpen) == this.reedSwitchActiveState));
+         (TCA.digitalReadSync(this.pinClosed) == this.reedSwitchActiveState) &&
+         (TCA.digitalReadSync(this.pinOpen) == this.reedSwitchActiveState));
 }
 
 BlindsAccessory.prototype.oppositeDirection = function(moveUp) {

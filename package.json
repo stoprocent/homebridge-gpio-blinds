@@ -17,7 +17,7 @@
     "url": "https://github.com/rsporny/homebridge-gpio-blinds"
   },
   "dependencies": {
-    "node-tca6416a": "stoprocent/node-tca6416a",
+    
     "underscore": "^1.8.3",
     "node-persist": "^2.1.0"
   },
