@@ -137,11 +137,14 @@ BlindsAccessory.prototype.setTargetPosition = function(position, callback) {
     return true;
   }
 
+  // Specific Timing Func
+  const timeDuration = (x) => { return x < 0.0926 ? x * 3.125 : 0.214783 + 0.805217 * x }
+
   if (moveUp) {
-    duration = Math.round((this.targetPosition - this.currentPosition) / 100 * this.durationUp);
+    duration = Math.round((timeDuration(this.targetPosition / 100) - timeDuration(this.currentPosition / 100)) * this.durationUp);
     this.currentPositionInterval = setInterval(this.setCurrentPosition.bind(this, moveUp), this.intervalUp);
   } else {
-    duration = Math.round((this.currentPosition - this.targetPosition) / 100 * this.durationDown);
+    duration = Math.round((timeDuration(this.currentPosition / 100) - timeDuration(this.targetPosition / 100)) * this.durationDown);
     this.currentPositionInterval = setInterval(this.setCurrentPosition.bind(this, moveUp), this.intervalDown);
   }
 
